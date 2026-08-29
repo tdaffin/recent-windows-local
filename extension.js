@@ -80,7 +80,8 @@ export default class RecentWindowsExtension extends Extension {
         this._recentWindows.forEach((item, index) => {
             const title = item.title;
             // Shorten display title if too long
-            const displayTitle = title.length > 30 ? title.substring(0, 27) + '...' : title;
+            const limit = 60;
+            const displayTitle = title.length > limit ? title.substring(0, limit - 3) + '...' : title;
             
             const menuItem = new PopupMenu.PopupMenuItem(`${index + 1}. ${displayTitle}`);
             
