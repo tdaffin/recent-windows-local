@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.recent-windows" path="/org/gnome/shell/extensions/recent-windows/">
+    <key name="max-history-length" type="i">
+      <default>15</default>
+      <summary>Max History Length</summary>
+      <description>Maximum number of recent windows to remember.</description>
+    </key>
+    <key name="display-limit" type="i">
+      <default>60</default>
+      <summary>Display Limit</summary>
+      <description>Maximum length of character truncation for window titles.</description>
+    </key>
+  </schema>
+</schemalist>

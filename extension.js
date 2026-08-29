@@ -8,6 +8,9 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 export default class RecentWindowsExtension extends Extension {
     enable() {
+        // Initialize extension settings
+        this._settings = this.getSettings();
+
         // 1. Create top bar indicator button
         this._indicator = new PanelMenu.Button(0.0, this.metadata.name, false);
         
@@ -24,6 +27,11 @@ export default class RecentWindowsExtension extends Extension {
         // 2. Initialize window history array
         // Store stable window metadata entries rather than direct window pointers
         this._recentHistory = [];
+
+        // Listen for setting changes to update menu instantly
+        this._settingsChangedId = this._settings.connect('changed', () => {
+            this._updateMenu();
+        });
 
         // 3. Connect focus signal on GNOME's display tracker
         this._focusSignalId = global.display.connect('notify::focus-window', () => {
@@ -62,8 +70,8 @@ export default class RecentWindowsExtension extends Extension {
             app: Shell.WindowTracker.get_default().get_window_app(focusedWindow)
         });
 
-        // Cap history length
-        const maxHistoryLength = 15;
+        // Cap history length dynamically from settings
+        const maxHistoryLength = this._settings.get_int('max-history-length');
         if (this._recentHistory.length > maxHistoryLength) {
             this._recentHistory.pop();
         }
@@ -109,9 +117,9 @@ export default class RecentWindowsExtension extends Extension {
         // Populate popup menu with the last focused windows
         validItems.forEach(({ item, window }, index) => {
             const title = item.title;
-            // Shorten display title if too long
-            const displayLimit = 60;
-            const displayTitle = title.length > displayLimit ? `${title.substring(0, displayLimit - 3)}...` : title;
+            // Shorten display title if too long dynamically from settings
+            const displayLimit = this._settings.get_int('display-limit');
+            const displayTitle = title.length > displayLimit ? `${title.substring(0, Math.max(0, displayLimit - 3))}...` : title;
             
             const menuItem = new PopupMenu.PopupMenuItem(`${index + 1}. ${displayTitle}`);
             
@@ -140,6 +148,12 @@ export default class RecentWindowsExtension extends Extension {
     }
 
     disable() {
+        // Disconnect settings change listener
+        if (this._settingsChangedId) {
+            this._settings.disconnect(this._settingsChangedId);
+            this._settingsChangedId = null;
+        }
+
         // Disconnect focus signal
         if (this._focusSignalId) {
             global.display.disconnect(this._focusSignalId);
@@ -152,6 +166,7 @@ export default class RecentWindowsExtension extends Extension {
             this._indicator = null;
         }
 
+        this._settings = null;
         this._recentHistory = [];
     }
 }

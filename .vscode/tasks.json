@@ -2,9 +2,21 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Reload GNOME Extension",
+      "label": "Compile GSettings Schemas",
+      "type": "shell",
+      "command": "glib-compile-schemas schemas/",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared",
+        "clear": true
+      }
+    },
+    {
+      "label": "Build & Reload Extension",
       "type": "shell",
       "command": "gnome-extensions disable recent-windows@local && gnome-extensions enable recent-windows@local",
+      "dependsOn": "Compile GSettings Schemas",
       "problemMatcher": [],
       "group": {
         "kind": "build",
