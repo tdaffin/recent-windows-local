@@ -1,0 +1,30 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Reload GNOME Extension",
+      "type": "shell",
+      "command": "gnome-extensions disable recent-windows@local && gnome-extensions enable recent-windows@local",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared",
+        "clear": true
+      }
+    },
+    {
+      "label": "GNOME Shell Log Output",
+      "type": "shell",
+      "command": "journalctl -f -o cat /usr/bin/gnome-shell | grep -i recent-windows",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    }
+  ]
+}
