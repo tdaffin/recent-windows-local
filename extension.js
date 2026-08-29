@@ -22,7 +22,8 @@ export default class RecentWindowsExtension extends Extension {
         Main.panel.addToStatusArea(this.uuid, this._indicator);
 
         // 2. Initialize window history array
-        this._recentWindows = [];
+        // Store stable window metadata entries rather than direct window pointers
+        this._recentHistory = [];
 
         // 3. Connect focus signal on GNOME's display tracker
         this._focusSignalId = global.display.connect('notify::focus-window', () => {
@@ -33,6 +34,14 @@ export default class RecentWindowsExtension extends Extension {
         this._onWindowFocused();
     }
 
+    _getStableId(win) {
+        // Use GNOME's unique stable sequence ID, falling back to window handle ID
+        if (typeof win.get_stable_sequence === 'function') {
+            return win.get_stable_sequence();
+        }
+        return win.get_id ? win.get_id() : win;
+    }
+
     _onWindowFocused() {
         const focusedWindow = global.display.focus_window;
 
@@ -41,47 +50,68 @@ export default class RecentWindowsExtension extends Extension {
             return;
         }
 
-        // Remove window if it already exists in our list (move to top)
-        this._recentWindows = this._recentWindows.filter(
-            item => item.window !== focusedWindow
-        );
+        const winId = this._getStableId(focusedWindow);
 
-        // Unshift the newly focused window
-        this._recentWindows.unshift({
-            window: focusedWindow,
+        // Remove if already tracked
+        this._recentHistory = this._recentHistory.filter(item => item.id !== winId);
+
+        // Add to top of stack
+        this._recentHistory.unshift({
+            id: winId,
             title: focusedWindow.get_title() || 'Untitled Window',
             app: Shell.WindowTracker.get_default().get_window_app(focusedWindow)
         });
 
-        // Limit history to top 15
-        if (this._recentWindows.length > 15) {
-            this._recentWindows.pop();
+        // Cap history length
+        const maxHistoryLength = 15;
+        if (this._recentHistory.length > maxHistoryLength) {
+            this._recentHistory.pop();
         }
 
         this._updateMenu();
+    }
+
+    _getAllActiveWindows() {
+        // Collect all open actor windows across all workspaces
+        const windows = [];
+        global.get_window_actors().forEach(actor => {
+            const win = actor.get_meta_window();
+            if (win && !win.is_override_redirect()) {
+                windows.push(win);
+            }
+        });
+        return windows;
     }
 
     _updateMenu() {
         // Clear old menu items
         this._indicator.menu.removeAll();
 
-        // Remove any closed windows from the list
-        this._recentWindows = this._recentWindows.filter(item => {
-            return item.window && !item.window.is_override_redirect();
-        });
+        const activeWindows = this._getAllActiveWindows();
+        const validItems = [];
 
-        if (this._recentWindows.length === 0) {
-            let emptyItem = new PopupMenu.PopupMenuItem('No recent windows', { reactive: false });
+        // Match tracked IDs against current active GNOME windows
+        for (const item of this._recentHistory) {
+            const liveWin = activeWindows.find(w => this._getStableId(w) === item.id);
+            if (liveWin) {
+                // Keep fresh window title if updated
+                item.title = liveWin.get_title() || item.title;
+                validItems.push({ item, window: liveWin });
+            }
+        }
+
+        if (validItems.length === 0) {
+            const emptyItem = new PopupMenu.PopupMenuItem('No recent windows', { reactive: false });
             this._indicator.menu.addMenuItem(emptyItem);
             return;
         }
 
         // Populate popup menu with the last focused windows
-        this._recentWindows.forEach((item, index) => {
+        validItems.forEach(({ item, window }, index) => {
             const title = item.title;
             // Shorten display title if too long
-            const limit = 60;
-            const displayTitle = title.length > limit ? title.substring(0, limit - 3) + '...' : title;
+            const displayLimit = 60;
+            const displayTitle = title.length > displayLimit ? `${title.substring(0, displayLimit - 3)}...` : title;
             
             const menuItem = new PopupMenu.PopupMenuItem(`${index + 1}. ${displayTitle}`);
             
@@ -95,12 +125,12 @@ export default class RecentWindowsExtension extends Extension {
 
             // Click menu item to activate/raise window
             menuItem.connect('activate', () => {
-                if (item.window) {
-                    const workspace = item.window.get_workspace();
+                if (window) {
+                    const workspace = window.get_workspace();
                     if (workspace) {
-                        workspace.activate_with_focus(item.window, global.get_current_time());
+                        workspace.activate_with_focus(window, global.get_current_time());
                     } else {
-                        item.window.activate(global.get_current_time());
+                        window.activate(global.get_current_time());
                     }
                 }
             });
@@ -122,7 +152,6 @@ export default class RecentWindowsExtension extends Extension {
             this._indicator = null;
         }
 
-        this._recentWindows = [];
+        this._recentHistory = [];
     }
 }
-
