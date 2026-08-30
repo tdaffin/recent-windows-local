@@ -15,7 +15,7 @@
     {
       "label": "Build & Reload Extension",
       "type": "shell",
-      "command": "gnome-extensions disable recent-windows@local && gnome-extensions enable recent-windows@local",
+      "command": "gnome-extensions disable recent-windows@local && gnome-extensions enable recent-windows@local && busctl --user call org.gnome.Shell /org/gnome/Shell org.gnome.Shell Eval s 'Meta.restart(\"Restarting...\")'",
       "dependsOn": "Compile GSettings Schemas",
       "problemMatcher": [],
       "group": {

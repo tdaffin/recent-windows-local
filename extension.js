@@ -9,7 +9,8 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 export default class RecentWindowsExtension extends Extension {
     enable() {
         // Initialize extension settings
-        this._settings = this.getSettings();
+        // Pass explicit schema ID to avoid lookup failure
+        this._settings = this.getSettings('org.gnome.shell.extensions.recent-windows');
 
         // 1. Create top bar indicator button
         this._indicator = new PanelMenu.Button(0.0, this.metadata.name, false);

@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch Nested GNOME Shell",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "dbus-run-session gnome-shell --nested --wayland",
+      "preLaunchTask": "Compile GSettings Schemas"
+    }
+  ]
+}
