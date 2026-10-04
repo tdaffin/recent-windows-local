@@ -8,6 +8,7 @@
 * **Configurable Settings:** `display-limit` (int, default 60) and `max-history-length` (int, default 15).
 
 ## Directory Structure
+- `README.md` — Developer setup, Ubuntu-specific debugging prerequisites, development-shell launch commands, and reload limitations.
 - `extension.js` — Main logic using `Shell.WindowTracker` and `get_stable_sequence()` to track windows reliably without losing references.
 - `prefs.js` — Preference UI using `Adw` and `Gtk.SpinButton` bound to GSettings. Imports the shared GNOME 46/50 preferences API from `resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js`.
 - `metadata.json` — Declares GNOME Shell versions `46` and `50` and the settings schema `org.gnome.shell.extensions.recent-windows`, used by both the extension and preferences.
@@ -22,7 +23,7 @@
 
 ## Applying Updates
 1. Run the **Compile GSettings Schemas** task (or `glib-compile-schemas schemas/` from the extension directory).
-2. On Wayland, log out and back in after changing source or metadata; restarting the live shell is not supported.
+2. Use a fresh development shell to test source changes without logging out. To apply already-loaded JavaScript changes to the normal Wayland desktop, log out and back in; restarting the live shell is not supported. For metadata-only reloads, see [README.md](README.md#reloading-limitations).
 3. Check `gnome-extensions info recent-windows@local`. If disabled, run `gnome-extensions enable recent-windows@local`.
 4. Open settings with `gnome-extensions prefs recent-windows@local`.
 
