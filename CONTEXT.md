@@ -4,6 +4,7 @@
 * **Extension Name:** Recent Windows Focus (`recent-windows@local`)
 * **Supported Environments:** Ubuntu 24.04 LTS with GNOME 46 and Ubuntu 26.04 LTS with GNOME 50 (Wayland).
 * **Goal:** Track recent window focus history and display a dropdown menu in the top bar.
+* **Menu Layout:** Application icons appear before the numbered window titles; entries without an available icon remain text-only.
 * **Configurable Settings:** `display-limit` (int, default 60) and `max-history-length` (int, default 15).
 
 ## Directory Structure

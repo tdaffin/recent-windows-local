@@ -128,7 +128,7 @@ export default class RecentWindowsExtension extends Extension {
             if (item.app) {
                 const appIcon = item.app.create_icon_texture(16);
                 if (appIcon) {
-                    menuItem.add_child(appIcon);
+                    menuItem.insert_child_below(appIcon, menuItem.label);
                 }
             }
 
