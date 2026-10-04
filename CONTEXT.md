@@ -13,12 +13,14 @@
 - `prefs.js` — Preference UI using `Adw` and `Gtk.SpinButton` bound to GSettings. Imports the shared GNOME 46/50 preferences API from `resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js`.
 - `metadata.json` — Declares GNOME Shell versions `46` and `50` and the settings schema `org.gnome.shell.extensions.recent-windows`, used by both the extension and preferences.
 - `schemas/org.gnome.shell.extensions.recent-windows.gschema.xml` — GSettings XML schema.
+- `tests/extension.test.cjs` — Node-based regression tests with mocked GNOME APIs; run via the **Run Extension Tests** task.
 - `.vscode/tasks.json` — Contains build tasks to run `glib-compile-schemas schemas/` and disable/enable the extension. Toggling does not reload cached source or metadata.
 - `.vscode/launch.json` — Uses `node-terminal` with `preLaunchTask: "Compile GSettings Schemas"` for live debugging. Launches a separate shell with `--nested --wayland` on GNOME 46 or `--devkit --wayland` on GNOME 50.
 
 ## Key Code Details
 - Initialized settings in `extension.js`:
   `this._settings = this.getSettings('org.gnome.shell.extensions.recent-windows');`
+- Match stable IDs against `global.display.list_all_windows()`, not compositor actors. Prune closed entries before applying the history limit and refresh the menu when it opens.
 - Avoided using `busctl` D-Bus restart calls due to Wayland security restrictions; use a separate shell for testing.
 
 ## Applying Updates

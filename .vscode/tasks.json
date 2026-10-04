@@ -29,6 +29,12 @@
       }
     },
     {
+      "label": "Run Extension Tests",
+      "type": "shell",
+      "command": "node --experimental-vm-modules --test tests/extension.test.cjs",
+      "problemMatcher": []
+    },
+    {
       "label": "GNOME Shell Log Output",
       "type": "shell",
       "command": "journalctl -f -o cat /usr/bin/gnome-shell | grep -i recent-windows",

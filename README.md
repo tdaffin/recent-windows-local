@@ -8,6 +8,17 @@ Supported environments:
 - Ubuntu 24.04 LTS with GNOME Shell 46.
 - Ubuntu 26.04 LTS with GNOME Shell 50.
 
+## Menu history
+
+The menu remembers recently focused windows that are still open, including
+minimized windows and windows on other workspaces. Closed windows are removed
+before applying the history limit, and the menu refreshes whenever it opens.
+
+**Max History Length** defaults to **15** and can be adjusted from **1 to 50**
+in the extension's preferences. If more than that many open windows have been
+focused, the least recently focused entries leave the history intentionally;
+focusing one again brings it back to the top.
+
 ## Developer setup
 
 ### 1. Install the checkout in the extension directory
@@ -131,3 +142,17 @@ This does not reliably apply changes to JavaScript that has already been
 imported. Use a fresh development shell for code changes, or log out and back
 in when ready to apply them to your normal desktop. Keep extension-version
 validation enabled.
+
+## Regression tests
+
+With Node.js 18 or newer installed, run the **Run Extension Tests** VS Code task
+or execute this from the checkout directory:
+
+```sh
+node --experimental-vm-modules --test tests/extension.test.cjs
+```
+
+The tests use Node's built-in runner and mocked GNOME APIs, with no npm
+dependencies. They cover closed-window churn, windows without compositor
+actors, menu refresh, history limits, icon placement, activation, and cleanup.
+Use the development shell for testing against real GNOME APIs.

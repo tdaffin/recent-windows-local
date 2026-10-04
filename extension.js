@@ -29,6 +29,12 @@ export default class RecentWindowsExtension extends Extension {
         // Store stable window metadata entries rather than direct window pointers
         this._recentHistory = [];
 
+        this._menuSignalId = this._indicator.menu.connect('open-state-changed', (_menu, isOpen) => {
+            if (isOpen) {
+                this._updateMenu();
+            }
+        });
+
         // Listen for setting changes to update menu instantly
         this._settingsChangedId = this._settings.connect('changed', () => {
             this._updateMenu();
@@ -71,42 +77,32 @@ export default class RecentWindowsExtension extends Extension {
             app: Shell.WindowTracker.get_default().get_window_app(focusedWindow)
         });
 
-        // Cap history length dynamically from settings
-        const maxHistoryLength = this._settings.get_int('max-history-length');
-        if (this._recentHistory.length > maxHistoryLength) {
-            this._recentHistory.pop();
-        }
-
         this._updateMenu();
     }
 
     _getAllActiveWindows() {
-        // Collect all open actor windows across all workspaces
-        const windows = [];
-        global.get_window_actors().forEach(actor => {
-            const win = actor.get_meta_window();
-            if (win && !win.is_override_redirect()) {
-                windows.push(win);
-            }
-        });
-        return windows;
+        return global.display.list_all_windows().filter(win => !win.is_override_redirect());
     }
 
     _updateMenu() {
         // Clear old menu items
         this._indicator.menu.removeAll();
 
-        const activeWindows = this._getAllActiveWindows();
+        const activeWindows = new Map(
+            this._getAllActiveWindows().map(win => [this._getStableId(win), win])
+        );
+        // Closed windows must not consume slots and evict still-open history entries.
+        this._recentHistory = this._recentHistory
+            .filter(item => activeWindows.has(item.id))
+            .slice(0, this._settings.get_int('max-history-length'));
         const validItems = [];
 
         // Match tracked IDs against current active GNOME windows
         for (const item of this._recentHistory) {
-            const liveWin = activeWindows.find(w => this._getStableId(w) === item.id);
-            if (liveWin) {
-                // Keep fresh window title if updated
-                item.title = liveWin.get_title() || item.title;
-                validItems.push({ item, window: liveWin });
-            }
+            const liveWin = activeWindows.get(item.id);
+            // Keep fresh window title if updated
+            item.title = liveWin.get_title() || item.title;
+            validItems.push({ item, window: liveWin });
         }
 
         if (validItems.length === 0) {
@@ -159,6 +155,11 @@ export default class RecentWindowsExtension extends Extension {
         if (this._focusSignalId) {
             global.display.disconnect(this._focusSignalId);
             this._focusSignalId = null;
+        }
+
+        if (this._menuSignalId) {
+            this._indicator.menu.disconnect(this._menuSignalId);
+            this._menuSignalId = null;
         }
 
         // Destroy indicator widget
