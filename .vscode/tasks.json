@@ -13,9 +13,9 @@
       }
     },
     {
-      "label": "Build & Reload Extension",
+      "label": "Build & Enable Extension",
       "type": "shell",
-      "command": "gnome-extensions disable recent-windows@local && gnome-extensions enable recent-windows@local && busctl --user call org.gnome.Shell /org/gnome/Shell org.gnome.Shell Eval s 'Meta.restart(\"Restarting...\")'",
+      "command": "gnome-extensions disable recent-windows@local && gnome-extensions enable recent-windows@local && printf '%s\\n' 'If source or metadata changed, log out and back in to load the changes on Wayland.'",
       "dependsOn": "Compile GSettings Schemas",
       "problemMatcher": [],
       "group": {

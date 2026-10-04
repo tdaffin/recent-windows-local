@@ -2,6 +2,6 @@
   "uuid": "recent-windows@local",
   "name": "Recent Windows Focus",
   "description": "Tracks and displays the last 5 focused windows in the top bar.",
-  "shell-version": ["46"]
+  "shell-version": ["46", "50"],
+  "settings-schema": "org.gnome.shell.extensions.recent-windows"
 }
-
