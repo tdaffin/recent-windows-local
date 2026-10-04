@@ -6,71 +6,104 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
+/**
+ * @typedef {number | Meta.Window} WindowId
+ * Stable sequence (or legacy handle); the window itself is the last-resort key.
+ */
+
+/**
+ * @typedef {object} RecentWindowEntry
+ * Cached metadata, not proof that the window is still open.
+ * @property {WindowId} id
+ * @property {string} title Last nonempty title, refreshed when building the menu.
+ * @property {Shell.App | null} app Not all windows have a tracked application.
+ */
+
+/** Owns the panel button, MRU history, and signal connections while enabled. */
 export default class RecentWindowsExtension extends Extension {
+    /** @type {ReturnType<Extension['getSettings']> | null} */
+    _settings = null;
+
+    /** @type {PanelMenu.Button | null} */
+    _indicator = null;
+
+    /** @type {PopupMenu.PopupMenu | null} */
+    _menu = null;
+
+    /** @type {RecentWindowEntry[]} */
+    _recentHistory = [];
+
+    /** @type {number | null} */
+    _settingsChangedId = null;
+
+    /** @type {number | null} */
+    _focusSignalId = null;
+
+    /** @type {number | null} */
+    _menuSignalId = null;
+
+    /** @returns {void} Connect listeners and seed history with the focused window. */
     enable() {
-        // Initialize extension settings
-        // Pass explicit schema ID to avoid lookup failure
         this._settings = this.getSettings('org.gnome.shell.extensions.recent-windows');
 
-        // 1. Create top bar indicator button
         this._indicator = new PanelMenu.Button(0.0, this.metadata.name, false);
-        
-        // Set icon for top bar
+        const menu = this._indicator.menu;
+        if (!(menu instanceof PopupMenu.PopupMenu)) {
+            throw new Error('Recent Windows requires a standard popup menu');
+        }
+        this._menu = menu;
+
         const icon = new St.Icon({
             icon_name: 'view-restore-symbolic',
             style_class: 'system-status-icon',
         });
         this._indicator.add_child(icon);
 
-        // Add to right side of top panel
         Main.panel.addToStatusArea(this.uuid, this._indicator);
 
-        // 2. Initialize window history array
-        // Store stable window metadata entries rather than direct window pointers
         this._recentHistory = [];
 
-        this._menuSignalId = this._indicator.menu.connect('open-state-changed', (_menu, isOpen) => {
+        this._menuSignalId = menu.connect('open-state-changed', (_menu, isOpen) => {
             if (isOpen) {
                 this._updateMenu();
             }
+            return undefined;
         });
 
-        // Listen for setting changes to update menu instantly
         this._settingsChangedId = this._settings.connect('changed', () => {
             this._updateMenu();
         });
 
-        // 3. Connect focus signal on GNOME's display tracker
         this._focusSignalId = global.display.connect('notify::focus-window', () => {
             this._onWindowFocused();
         });
 
-        // Populate initial focus window if one exists
         this._onWindowFocused();
     }
 
+    /**
+     * @param {Meta.Window} win
+     * @returns {WindowId} Identity shared by focus events and managed-window snapshots.
+     */
     _getStableId(win) {
-        // Use GNOME's unique stable sequence ID, falling back to window handle ID
         if (typeof win.get_stable_sequence === 'function') {
             return win.get_stable_sequence();
         }
         return win.get_id ? win.get_id() : win;
     }
 
+    /** @returns {void} Move a normal focused window to the front without duplicates. */
     _onWindowFocused() {
         const focusedWindow = global.display.focus_window;
 
-        // Ignore invalid windows or special desktop panels
         if (!focusedWindow || focusedWindow.is_override_redirect()) {
             return;
         }
 
         const winId = this._getStableId(focusedWindow);
 
-        // Remove if already tracked
         this._recentHistory = this._recentHistory.filter(item => item.id !== winId);
 
-        // Add to top of stack
         this._recentHistory.unshift({
             id: winId,
             title: focusedWindow.get_title() || 'Untitled Window',
@@ -80,47 +113,53 @@ export default class RecentWindowsExtension extends Extension {
         this._updateMenu();
     }
 
+    /** @returns {Meta.Window[]} Managed windows, including those without visible actors. */
     _getAllActiveWindows() {
         return global.display.list_all_windows().filter(win => !win.is_override_redirect());
     }
 
+    /**
+     * Refresh titles and match history to live windows before applying the cap.
+     * @returns {void}
+     * @throws {Error} If called without the enabled extension's settings and menu.
+     */
     _updateMenu() {
-        // Clear old menu items
-        this._indicator.menu.removeAll();
+        const settings = this._settings;
+        const menu = this._menu;
+        if (!settings || !menu) {
+            throw new Error('Recent Windows cannot update its menu while disabled');
+        }
+        menu.removeAll();
 
         const activeWindows = new Map(
             this._getAllActiveWindows().map(win => [this._getStableId(win), win])
         );
         // Closed windows must not consume slots and evict still-open history entries.
-        this._recentHistory = this._recentHistory
-            .filter(item => activeWindows.has(item.id))
-            .slice(0, this._settings.get_int('max-history-length'));
-        const validItems = [];
+        const validItems = this._recentHistory
+            .flatMap(item => {
+                const window = activeWindows.get(item.id);
+                return window ? [{ item, window }] : [];
+            })
+            .slice(0, settings.get_int('max-history-length'));
+        this._recentHistory = validItems.map(({ item }) => item);
 
-        // Match tracked IDs against current active GNOME windows
-        for (const item of this._recentHistory) {
-            const liveWin = activeWindows.get(item.id);
-            // Keep fresh window title if updated
-            item.title = liveWin.get_title() || item.title;
-            validItems.push({ item, window: liveWin });
+        for (const { item, window } of validItems) {
+            item.title = window.get_title() || item.title;
         }
 
         if (validItems.length === 0) {
             const emptyItem = new PopupMenu.PopupMenuItem('No recent windows', { reactive: false });
-            this._indicator.menu.addMenuItem(emptyItem);
+            menu.addMenuItem(emptyItem);
             return;
         }
 
-        // Populate popup menu with the last focused windows
         validItems.forEach(({ item, window }, index) => {
             const title = item.title;
-            // Shorten display title if too long dynamically from settings
-            const displayLimit = this._settings.get_int('display-limit');
+            const displayLimit = settings.get_int('display-limit');
             const displayTitle = title.length > displayLimit ? `${title.substring(0, Math.max(0, displayLimit - 3))}...` : title;
-            
+
             const menuItem = new PopupMenu.PopupMenuItem(`${index + 1}. ${displayTitle}`);
-            
-            // Add App icon to menu item if available
+
             if (item.app) {
                 const appIcon = item.app.create_icon_texture(16);
                 if (appIcon) {
@@ -128,46 +167,42 @@ export default class RecentWindowsExtension extends Extension {
                 }
             }
 
-            // Click menu item to activate/raise window
             menuItem.connect('activate', () => {
-                if (window) {
-                    const workspace = window.get_workspace();
-                    if (workspace) {
-                        workspace.activate_with_focus(window, global.get_current_time());
-                    } else {
-                        window.activate(global.get_current_time());
-                    }
+                const workspace = window.get_workspace();
+                if (workspace) {
+                    workspace.activate_with_focus(window, global.get_current_time());
+                } else {
+                    window.activate(global.get_current_time());
                 }
             });
 
-            this._indicator.menu.addMenuItem(menuItem);
+            menu.addMenuItem(menuItem);
         });
     }
 
+    /** @returns {void} Release all owned resources; safe after partial enablement. */
     disable() {
-        // Disconnect settings change listener
-        if (this._settingsChangedId) {
+        if (this._settingsChangedId && this._settings) {
             this._settings.disconnect(this._settingsChangedId);
             this._settingsChangedId = null;
         }
 
-        // Disconnect focus signal
         if (this._focusSignalId) {
             global.display.disconnect(this._focusSignalId);
             this._focusSignalId = null;
         }
 
-        if (this._menuSignalId) {
-            this._indicator.menu.disconnect(this._menuSignalId);
+        if (this._menuSignalId && this._menu) {
+            this._menu.disconnect(this._menuSignalId);
             this._menuSignalId = null;
         }
 
-        // Destroy indicator widget
         if (this._indicator) {
             this._indicator.destroy();
             this._indicator = null;
         }
 
+        this._menu = null;
         this._settings = null;
         this._recentHistory = [];
     }

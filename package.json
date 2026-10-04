@@ -1,0 +1,20 @@
+{
+  "name": "recent-windows-local",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "typecheck:gjs": "tsc --project jsconfig.json",
+    "typecheck:tests": "tsc --project tests/jsconfig.json",
+    "typecheck": "npm run typecheck:gjs && npm run typecheck:tests",
+    "build": "npm run typecheck && glib-compile-schemas schemas/",
+    "test": "node --experimental-vm-modules --test tests/extension.test.cjs"
+  },
+  "devDependencies": {
+    "@girs/gjs": "4.3.0",
+    "@girs/gnome-shell": "46.0.2",
+    "@types/node": "18.19.130",
+    "typescript": "5.9.3"
+  }
+}

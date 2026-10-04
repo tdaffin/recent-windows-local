@@ -2,6 +2,12 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Type Check Extension",
+      "type": "shell",
+      "command": "npm run typecheck",
+      "problemMatcher": ["$tsc"]
+    },
+    {
       "label": "Compile GSettings Schemas",
       "type": "shell",
       "command": "glib-compile-schemas schemas/",
@@ -13,10 +19,16 @@
       }
     },
     {
+      "label": "Prepare Extension",
+      "dependsOrder": "sequence",
+      "dependsOn": ["Type Check Extension", "Compile GSettings Schemas"],
+      "problemMatcher": []
+    },
+    {
       "label": "Build & Enable Extension",
       "type": "shell",
       "command": "gnome-extensions disable recent-windows@local && gnome-extensions enable recent-windows@local && printf '%s\\n' 'If source or metadata changed, log out and back in to load the changes on Wayland.'",
-      "dependsOn": "Compile GSettings Schemas",
+      "dependsOn": "Prepare Extension",
       "problemMatcher": [],
       "group": {
         "kind": "build",
@@ -31,7 +43,7 @@
     {
       "label": "Run Extension Tests",
       "type": "shell",
-      "command": "node --experimental-vm-modules --test tests/extension.test.cjs",
+      "command": "npm test",
       "problemMatcher": []
     },
     {

@@ -3,6 +3,11 @@ import Gtk from 'gi://Gtk';
 import { ExtensionPreferences } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 export default class RecentWindowsPreferences extends ExtensionPreferences {
+    /**
+     * Add controls with bidirectional GSettings bindings; no manual save is needed.
+     * @param {Adw.PreferencesWindow} window Window supplied by the preferences service.
+     * @returns {void}
+     */
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
 
@@ -10,7 +15,6 @@ export default class RecentWindowsPreferences extends ExtensionPreferences {
         const group = new Adw.PreferencesGroup({ title: 'Window Tracking Settings' });
         page.add(group);
 
-        // Max History Length Row
         const historyRow = new Adw.ActionRow({
             title: 'Max History Length',
             subtitle: 'Maximum number of recent windows to remember',
@@ -23,7 +27,6 @@ export default class RecentWindowsPreferences extends ExtensionPreferences {
         historyRow.add_suffix(historySpin);
         group.add(historyRow);
 
-        // Display Title Limit Row
         const displayRow = new Adw.ActionRow({
             title: 'Display Character Limit',
             subtitle: 'Maximum character length before truncating window titles',

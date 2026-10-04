@@ -4,22 +4,82 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
+/** @typedef {'max-history-length' | 'display-limit'} SettingsKey */
+/** @typedef {(emitter: SignalEmitter, ...args: (string | boolean)[]) => void} SignalHandler */
+/** @typedef {{text?: string}} MenuChild */
+/** @typedef {{reactive?: boolean}} MenuItemOptions */
+/** @typedef {{create_icon_texture: (size: number) => MenuChild | null}} TestApp */
+/**
+ * Only the window behavior exercised by this fixture.
+ * @typedef {object} TestWindow
+ * @property {string} title
+ * @property {TestApp | null} app
+ * @property {boolean} [minimized]
+ * @property {boolean} [hasActor]
+ * @property {() => number} get_stable_sequence
+ * @property {() => string} get_title
+ * @property {() => boolean} is_override_redirect
+ * @property {() => null} get_workspace
+ * @property {(timestamp: number) => void} activate
+ */
+/**
+ * @typedef {SignalEmitter & {
+ *   get_int: (key: SettingsKey) => number,
+ *   set_int: (key: SettingsKey, value: number) => void
+ * }} TestSettings
+ */
+/**
+ * @typedef {SignalEmitter & {
+ *   focus_window: TestWindow | null,
+ *   list_all_windows: () => TestWindow[]
+ * }} TestDisplay
+ */
+/** @typedef {{menu: Menu, destroyed?: boolean, destroy: () => void}} TestIndicator */
+/**
+ * Structural boundary for the VM-loaded class, not the GNOME extension API.
+ * @typedef {object} TestExtension
+ * @property {() => void} enable
+ * @property {() => void} disable
+ * @property {TestIndicator | null} _indicator
+ * @property {{id: number}[]} _recentHistory
+ */
+/**
+ * @typedef {object} TestFixture
+ * @property {TestExtension} extension
+ * @property {TestSettings} settings
+ * @property {TestDisplay} display
+ * @property {Menu} menu
+ * @property {(window: TestWindow) => void} focus
+ * @property {(window: TestWindow) => void} close
+ * @property {() => number[]} ids
+ * @property {() => string[]} labels
+ */
+
+/** Signal payloads are limited to settings keys and menu-open booleans. */
 class SignalEmitter {
     constructor() {
+        /** @type {Map<number, {signal: string, handler: SignalHandler}>} */
         this.handlers = new Map();
         this.nextId = 1;
     }
 
+    /**
+     * @param {string} signal
+     * @param {SignalHandler} handler
+     * @returns {number}
+     */
     connect(signal, handler) {
         const id = this.nextId++;
         this.handlers.set(id, {signal, handler});
         return id;
     }
 
+    /** @param {number} id @returns {void} */
     disconnect(id) {
         assert.ok(this.handlers.delete(id), `Unknown signal ${id}`);
     }
 
+    /** @param {string} signal @param {...(string | boolean)} args @returns {void} */
     emit(signal, ...args) {
         for (const entry of this.handlers.values()) {
             if (entry.signal === signal)
@@ -28,34 +88,44 @@ class SignalEmitter {
     }
 }
 
+/** Standard popup menu; also supplies the runtime instanceof identity. */
 class Menu extends SignalEmitter {
     constructor() {
         super();
+        /** @type {PopupMenuItem[]} */
         this.items = [];
     }
 
+    /** @returns {void} */
     removeAll() {
         this.items = [];
     }
 
+    /** @param {PopupMenuItem} item @returns {void} */
     addMenuItem(item) {
         this.items.push(item);
     }
 }
 
+/** Minimal label, ornament and child ordering used by menu assertions. */
 class PopupMenuItem extends SignalEmitter {
+    /** @param {string} text @param {MenuItemOptions} [options] */
     constructor(text, options = {}) {
         super();
         this.label = {text};
+        /** @type {MenuChild} */
         this.ornament = {};
+        /** @type {MenuChild[]} */
         this.children = [this.ornament, this.label];
         this.options = options;
     }
 
+    /** @param {MenuChild} child @returns {void} */
     add_child(child) {
         this.children.push(child);
     }
 
+    /** @param {MenuChild} child @param {MenuChild} sibling @returns {void} */
     insert_child_below(child, sibling) {
         const index = this.children.indexOf(sibling);
         assert.notEqual(index, -1);
@@ -63,99 +133,148 @@ class PopupMenuItem extends SignalEmitter {
     }
 }
 
+/** @param {number} [limit] @returns {Promise<TestFixture>} */
 async function fixture(limit = 15) {
-    const settings = new SignalEmitter();
+    /** @type {Record<SettingsKey, number>} */
     const values = {'max-history-length': limit, 'display-limit': 60};
-    settings.get_int = key => {
-        assert.ok(Object.hasOwn(values, key));
-        return values[key];
-    };
-    settings.set_int = (key, value) => {
-        values[key] = value;
-        settings.emit('changed', key);
-    };
+    /** @type {TestSettings} */
+    const settings = Object.assign(new SignalEmitter(), {
+        /** @param {SettingsKey} key @returns {number} */
+        get_int: key => {
+            assert.ok(Object.hasOwn(values, key));
+            return values[key];
+        },
+        /** @param {SettingsKey} key @param {number} value @returns {void} */
+        set_int: (key, value) => {
+            values[key] = value;
+            settings.emit('changed', key);
+        },
+    });
 
-    const display = new SignalEmitter();
-    display.focus_window = null;
+    /** @type {TestWindow[]} */
     let windows = [];
-    display.list_all_windows = () => windows;
+    /** @type {TestDisplay} */
+    const display = Object.assign(new SignalEmitter(), {
+        focus_window: null,
+        /** @returns {TestWindow[]} */
+        list_all_windows: () => windows,
+    });
     const context = vm.createContext({
         global: {
             display,
+            /** @returns {{get_meta_window: () => TestWindow}[]} */
             get_window_actors: () => windows
                 .filter(window => window.hasActor !== false)
                 .map(window => ({get_meta_window: () => window})),
+            /** @returns {number} */
             get_current_time: () => 123,
         },
     });
+    /** Settings provider exported as the VM's extension base class. */
     class Extension {
         constructor() {
             this.uuid = 'recent-windows@local';
             this.metadata = {name: 'Recent Windows Focus'};
         }
 
+        /** @returns {TestSettings} */
         getSettings() {
             return settings;
         }
     }
+    /** Panel indicator with the standard popup menu and teardown state. */
     class Button {
         constructor() {
             this.menu = new Menu();
         }
 
-        add_child() {}
+        /** @param {Icon} _child @returns {void} */
+        add_child(_child) {}
 
+        /** @returns {void} */
         destroy() {
             this.destroyed = true;
             this.menu.handlers.clear();
         }
     }
-    const imports = new Map([
-        ['gi://St', {default: {Icon: class {}}}],
+    /** The panel icon needs no rendering behavior in Node. */
+    class Icon {
+        /** @param {{icon_name: string, style_class: string}} _options */
+        constructor(_options) {}
+    }
+    /**
+     * Exact mock export shapes consumed by extension.js inside the VM.
+     * @typedef {{default: {Icon: typeof Icon}} |
+     *   {default: {WindowTracker: {get_default: () => {
+     *     get_window_app: (window: TestWindow) => TestApp | null
+     *   }}}} |
+     *   {default: Record<string, never>} |
+     *   {Extension: typeof Extension} |
+     *   {panel: {addToStatusArea: (uuid: string, indicator: Button) => void}} |
+     *   {Button: typeof Button} |
+     *   {PopupMenu: typeof Menu, PopupMenuItem: typeof PopupMenuItem}} MockModuleExports
+     */
+    /** @type {[string, MockModuleExports][]} */
+    const mockModules = [
+        ['gi://St', {default: {Icon}}],
         ['gi://Shell', {default: {WindowTracker: {
+            /** @returns {{get_window_app: (window: TestWindow) => TestApp | null}} */
             get_default: () => ({get_window_app: window => window.app}),
         }}}],
         ['gi://Meta', {default: {}}],
         ['resource:///org/gnome/shell/extensions/extension.js', {Extension}],
         ['resource:///org/gnome/shell/ui/main.js', {panel: {addToStatusArea() {}}}],
         ['resource:///org/gnome/shell/ui/panelMenu.js', {Button}],
-        ['resource:///org/gnome/shell/ui/popupMenu.js', {PopupMenuItem}],
-    ]);
+        ['resource:///org/gnome/shell/ui/popupMenu.js', {PopupMenu: Menu, PopupMenuItem}],
+    ];
+    const imports = new Map(mockModules);
     const source = fs.readFileSync(path.join(__dirname, '..', 'extension.js'), 'utf8');
     const module = new vm.SourceTextModule(source, {context});
-    await module.link(specifier => {
+    /** @param {string} specifier @returns {vm.SyntheticModule} */
+    const linkMock = specifier => {
         assert.ok(imports.has(specifier), `Unexpected import ${specifier}`);
         const exports = imports.get(specifier);
-        return new vm.SyntheticModule(Object.keys(exports), function () {
+        assert.ok(exports);
+        const evaluateMock = /** @this {vm.SyntheticModule} @returns {void} */ function () {
             for (const [key, value] of Object.entries(exports))
                 this.setExport(key, value);
-        }, {context});
-    });
+        };
+        return new vm.SyntheticModule(Object.keys(exports), evaluateMock, {context});
+    };
+    await module.link(linkMock);
     await module.evaluate();
-    const extension = new module.namespace.default();
+    // Node cannot infer the ESM class evaluated in a separate VM context.
+    const namespace = /** @type {{default: new () => TestExtension}} */ (module.namespace);
+    const extension = new namespace.default();
     extension.enable();
+    assert.ok(extension._indicator);
     const menu = extension._indicator.menu;
 
     return {
         extension, settings, display, menu,
+        /** @param {TestWindow} window @returns {void} */
         focus(window) {
             if (!windows.includes(window))
                 windows.push(window);
             display.focus_window = window;
             display.emit('notify::focus-window');
         },
+        /** @param {TestWindow} window @returns {void} */
         close(window) {
             windows = windows.filter(candidate => candidate !== window);
         },
+        /** @returns {number[]} */
         ids() {
             return Array.from(extension._recentHistory, item => item.id);
         },
+        /** @returns {string[]} */
         labels() {
             return menu.items.map(item => item.label.text);
         },
     };
 }
 
+/** @param {number} id @param {string} [title] @returns {TestWindow} */
 function window(id, title = `Window ${id}`) {
     return {
         title,
@@ -234,6 +353,7 @@ test('icons, truncation and activation are preserved', async () => {
         assert.equal(size, 16);
         return icon;
     }};
+    /** @type {number | undefined} */
     let activationTime;
     first.activate = timestamp => { activationTime = timestamp; };
     f.focus(first);
@@ -249,6 +369,7 @@ test('disable disconnects listeners and clears history', async () => {
     const f = await fixture();
     f.focus(window(1));
     const indicator = f.extension._indicator;
+    assert.ok(indicator);
     f.extension.disable();
     assert.equal(f.display.handlers.size, 0);
     assert.equal(f.settings.handlers.size, 0);

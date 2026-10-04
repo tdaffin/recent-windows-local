@@ -62,24 +62,67 @@ The `mutter-dev-bin` package provides `/usr/libexec/mutter-devkit`, which
 GNOME 50 needs to display its development shell in a window. Having
 `gnome-shell` installed alone is not sufficient.
 
-### 3. Compile the settings schemas
+### 3. Install development tools and prepare the extension
 
-From the checkout directory:
+With **Node.js 18 or newer** and npm installed, run from the checkout directory:
 
 ```sh
-glib-compile-schemas schemas/
+npm ci
+npm run build
 ```
 
-The compiled schema is generated locally and is not tracked in Git.
+The build first type-checks the JavaScript, then compiles the settings schemas.
+TypeScript and GNOME declarations are **development-only** dependencies; GNOME
+still loads the JavaScript directly. No transpilation or bundling is involved.
+The compiled schema and `node_modules/` are generated locally and not tracked.
+
+### Checked JSDoc and autocomplete
+
+Open the checkout in VS Code after running `npm ci`. JSDoc describes window
+identities, history records, nullable application references, extension lifecycle,
+preferences, and test mocks. Hover over a symbol for its contract and use
+**Ctrl+Space** for completion, including GNOME API methods.
+
+Run **Type Check Extension**, or:
+
+```sh
+npm run typecheck
+```
+
+[jsconfig.json](jsconfig.json) checks the GJS sources against GNOME Shell **46**
+declarations, without Node or browser globals. [tests/jsconfig.json](tests/jsconfig.json)
+checks the CommonJS fixtures separately with Node declarations. Both use strict
+checking and `noEmit`, so checking never generates JavaScript.
+
+The GNOME declarations are experimental. Their generated internals contain
+version conflicts, so the GJS configuration uses `skipLibCheck` to skip checking
+declaration-file internals; our JavaScript is still strictly checked against those
+types. A narrow correction in [types/gnome.d.ts](types/gnome.d.ts) adds the documented
+popup `open-state-changed` signal missing from the published declarations.
+Settings use the exact return type of GNOME's `getSettings()` to avoid mixing
+different transitive Gio declaration versions.
+
+If editor diagnostics refer to old code while `npm run typecheck` passes, reopen
+the file from disk without overwriting unsaved work, then run **TypeScript:
+Restart TS Server**. **TypeScript: Select TypeScript Version** lets you choose
+the installed workspace version.
+
+Typing against 46 helps avoid newer-shell-only APIs, but does **not** certify
+runtime compatibility or prevent every GNOME API change. Test against real GNOME
+46 and 50 when available. Development tools are pinned in
+[package-lock.json](package-lock.json); use `npm ci` for reproducible installs.
 
 ## Debugging without logging out
 
 Open the checkout in VS Code, select **Launch Nested GNOME Shell** in
 **Run and Debug**, and launch it. The configuration in
-[.vscode/launch.json](.vscode/launch.json) compiles the schemas first and
+[.vscode/launch.json](.vscode/launch.json) runs **Prepare Extension** (type checking,
+then schema compilation) first and
 selects the appropriate launch command.
 
 Alternatively, launch from a terminal:
+
+Run `npm run build` first to perform the same preparation checks.
 
 **GNOME 46:**
 
@@ -128,7 +171,8 @@ helper is missing.
 ## Reloading limitations
 
 The **Build & Enable Extension** task in
-[.vscode/tasks.json](.vscode/tasks.json) compiles schemas and toggles the
+[.vscode/tasks.json](.vscode/tasks.json) type-checks the code, compiles schemas,
+then toggles the
 extension. It does not refresh JavaScript modules already cached by GNOME.
 
 For a metadata-only change, such as adding support for the current shell
@@ -149,10 +193,16 @@ With Node.js 18 or newer installed, run the **Run Extension Tests** VS Code task
 or execute this from the checkout directory:
 
 ```sh
-node --experimental-vm-modules --test tests/extension.test.cjs
+npm test
 ```
 
 The tests use Node's built-in runner and mocked GNOME APIs, with no npm
-dependencies. They cover closed-window churn, windows without compositor
+runtime dependencies. They can also run without installing development tools:
+
+```sh
+node --experimental-vm-modules --test tests/extension.test.cjs
+```
+
+They cover closed-window churn, windows without compositor
 actors, menu refresh, history limits, icon placement, activation, and cleanup.
 Use the development shell for testing against real GNOME APIs.
